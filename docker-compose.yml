@@ -1,0 +1,50 @@
+services:
+  lb:
+    build: ./lb
+    ports:
+      - "8000:8000"
+    depends_on:
+      - backend1
+      - backend2
+      - backend3
+      - backend4
+
+  backend1:
+    build: ./backend
+    environment:
+      SERVER_ID: backend1
+      DELAY_MS: 10
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+
+  backend2:
+    build: ./backend
+    environment:
+      SERVER_ID: backend2
+      DELAY_MS: 30
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+
+  backend3:
+    build: ./backend
+    environment:
+      SERVER_ID: backend3
+      DELAY_MS: 60
+    deploy:
+      resources:
+        limits:
+          cpus: "0.3"
+
+  backend4:
+    build: ./backend
+    environment:
+      SERVER_ID: backend4
+      DELAY_MS: 0
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
