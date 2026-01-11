@@ -5,7 +5,7 @@
 
 This project provides a theoretical and experimental analysis of classical load balancing algorithms under realistic dynamic conditions such as heterogeneous server capacities, traffic bursts, and server failures.
 
-## 📋 Table of Contents
+## Table of Contents
 
 - [About](#about)
 - [Features](#features)
@@ -17,7 +17,7 @@ This project provides a theoretical and experimental analysis of classical load 
 - [Project Structure](#project-structure)
 - [Contributing](#contributing)
 
-## 🎯 About
+## About
 
 Load balancing is a fundamental mechanism for distributing client requests across multiple backend servers to improve system performance, availability, and scalability. While classical load balancing algorithms such as Round Robin, Least Connections, and Consistent Hashing perform well under ideal conditions, their performance often degrades when servers have heterogeneous capacities, traffic is bursty, or network latency fluctuates.
 
@@ -27,21 +27,21 @@ This project aims to fill the gap in existing literature by systematically compa
 
 Most classical load balancing algorithms rely on static assumptions about backend performance, which can lead to:
 
-- ⚠️ Load imbalance when server capabilities vary (e.g., CPU/IO differences)
-- ⚠️ High tail latency (p95/p99) under sudden traffic bursts
-- ⚠️ Unstable or unfair assignment when network delay fluctuates
-- ⚠️ Poor failover behavior, especially in hash-based schemes
+- Load imbalance when server capabilities vary (e.g., CPU/IO differences)
+- High tail latency (p95/p99) under sudden traffic bursts
+- Unstable or unfair assignment when network delay fluctuates
+- Poor failover behavior, especially in hash-based schemes
 
-## ✨ Features
+## Features
 
-- 🔄 **Four Classical Algorithms**: Round Robin, Weighted Round Robin, Least Connections, and Consistent Hashing
-- 📊 **Comprehensive Metrics**: Average latency, p50, p95, p99 percentiles
-- 🐳 **Docker Support**: Docker Compose for easy setup and execution
-- 📈 **Visualization**: Python-based latency distribution analysis and CDF plots
-- ⚙️ **Heterogeneous Servers**: Realistic test environment with different CPU capacities and delay times
-- 🔬 **Experimental Analysis**: Traffic burst and server failure scenarios
+- **Four Classical Algorithms**: Round Robin, Weighted Round Robin, Least Connections, and Consistent Hashing
+- **Comprehensive Metrics**: Average latency, p50, p95, p99 percentiles
+- **Docker Support**: Docker Compose for easy setup and execution
+- **Visualization**: Python-based latency distribution analysis and CDF plots
+- **Heterogeneous Servers**: Realistic test environment with different CPU capacities and delay times
+- **Experimental Analysis**: Traffic burst and server failure scenarios
 
-## 🧮 Supported Algorithms
+## Supported Algorithms
 
 ### 1. Round Robin (RR)
 A simple and fair distribution algorithm that selects servers in rotation. Sends requests to each server with equal frequency.
@@ -55,7 +55,7 @@ Selects the server with the fewest active connections. Provides dynamic load dis
 ### 4. Consistent Hashing
 Hash-based server selection. Ensures minimal redistribution when servers are added or removed.
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 ┌─────────────┐
@@ -77,7 +77,7 @@ Hash-based server selection. Ensures minimal redistribution when servers are add
 └──────────┘ └──────────┘ └──────────┘ └──────────┘
 ```
 
-## 🚀 Installation
+## Installation
 
 ### Requirements
 
@@ -102,7 +102,7 @@ This command starts:
 - Load balancer (port 8000)
 - 4 backend servers (with different capacities and delays)
 
-## 💻 Usage
+## Usage
 
 ### Basic Test
 
@@ -140,7 +140,7 @@ python plot_latency.py
 
 This command creates the `latency_cdf_lc_vs_rr.png` file.
 
-## 📊 Performance Metrics
+## Performance Metrics
 
 The project measures the following performance metrics:
 
@@ -156,7 +156,7 @@ The project measures the following performance metrics:
 2. **Traffic Bursts**: Performance under sudden load increases
 3. **Server Failures**: Failover behavior in case of server crashes
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 load-balancing-analysis/
@@ -177,7 +177,7 @@ load-balancing-analysis/
 └── README.md              # This file
 ```
 
-## 🔬 Experimental Results
+## Experimental Results
 
 The project aims to answer the following questions:
 
@@ -186,7 +186,7 @@ The project aims to answer the following questions:
 3. Which algorithm provides better failover in case of server failures?
 4. Which algorithms are more affected by network latency variability?
 
-## 📚 References
+## References
 
 This project is inspired by the following academic works:
 
@@ -198,7 +198,7 @@ This project is inspired by the following academic works:
 - Facebook Katran
 - Xu & Li (Latency-aware Load Balancing)
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Please:
 
@@ -208,14 +208,10 @@ Contributions are welcome! Please:
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## 📝 License
+## License
 
 This project is licensed under the MIT License.
 
-## 👥 Author
+## Author
 
 **CENG505 - Advanced Networking Project**
-
----
-
-⭐ If you liked this project, don't forget to give it a star!
