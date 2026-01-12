@@ -89,7 +89,7 @@ Hash-based server selection. Ensures minimal redistribution when servers are add
 
 1. **Clone the repository:**
 ```bash
-git clone https://github.com/username/load-balancing-analysis.git
+git clone https://github.com/Samet-Hodaman/load-balancing-analysis.git
 cd load-balancing-analysis
 ```
 
