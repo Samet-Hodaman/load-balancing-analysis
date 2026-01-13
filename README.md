@@ -15,6 +15,9 @@ This project provides a theoretical and experimental analysis of classical load 
 - [Usage](#usage)
 - [Performance Metrics](#performance-metrics)
 - [Project Structure](#project-structure)
+- [Experimental Results](#experimental-results)
+- [Technical Details](#technical-details)
+- [References](#references)
 - [Contributing](#contributing)
 
 ## About
@@ -99,14 +102,14 @@ cd load-balancing-analysis
 # Default algorithm (Round Robin)
 docker-compose up --build
 
-# Veya belirli bir algoritma ile başlatmak için:
+# Or start with a specific algorithm:
 ALGORITHM=weighted_round_robin docker-compose up --build
 ALGORITHM=least_connections docker-compose up --build
 ```
 
-Bu komut şunları başlatır:
+This command starts:
 - Load balancer (port 8000)
-- 4 backend server (farklı CPU kapasiteleri ve bellek limitleri ile)
+- 4 backend servers (with different CPU capacities and memory limits)
 
 ## Usage
 
@@ -122,12 +125,12 @@ curl http://localhost:8000/
 for i in {1..1000}; do curl http://localhost:8000/ & done; wait
 ```
 
-### Algoritma Değiştirme
+### Changing Algorithms
 
-Algoritmayı değiştirmek için `ALGORITHM` environment variable'ını kullanın:
+To change the algorithm, use the `ALGORITHM` environment variable:
 
 ```bash
-# Round Robin (varsayılan)
+# Round Robin (default)
 ALGORITHM=round_robin docker-compose up
 
 # Weighted Round Robin
@@ -137,60 +140,74 @@ ALGORITHM=weighted_round_robin docker-compose up
 ALGORITHM=least_connections docker-compose up
 ```
 
-Desteklenen algoritma değerleri:
-- `round_robin` (varsayılan)
+Supported algorithm values:
+- `round_robin` (default)
 - `weighted_round_robin`
 - `least_connections`
 
-### Metrik Toplama
+### Collecting Metrics
 
-Load balancer her istek için latency bilgilerini log dosyasına yazar:
-- Log dosyası: `logs/load_balancer.log`
-- Her backend server'ın kendi log dosyası: `logs/backend1.log`, `logs/backend2.log`, vb.
+The load balancer writes latency information to log files for each request:
+- Log file: `logs/load_balancer.log`
+- Each backend server has its own log file: `logs/backend1.log`, `logs/backend2.log`, etc.
 
-Log formatı:
+Log format:
 ```
 2026/01/13 21:25:24 server=backend1:8080 latency=465.542ms
 ```
 
-Test sonuçları için `experiments/` klasöründeki senaryoları kullanabilirsiniz. Her senaryo için JSON formatında sonuçlar ve HTML grafikler mevcuttur.
+You can use the scenarios in the `experiments/` folder for test results. Each scenario includes results in JSON format and HTML graphs.
 
-### Görselleştirme
+### Visualization
 
-Test sonuçlarını görselleştirmek için `experiments/` klasöründeki hazır grafikleri kullanabilirsiniz. Her senaryo için HTML formatında interaktif grafikler mevcuttur.
+You can use the ready-made graphs in the `experiments/` folder to visualize test results. Each scenario includes interactive graphs in HTML format.
 
-**Manuel grafik oluşturma:**
+**Manual graph creation:**
 
-Eğer Vegeta gibi bir load testing tool kullanarak JSON formatında sonuçlar topladıysanız:
+If you have collected results in JSON format using a load testing tool like Vegeta:
 
 ```bash
-# JSON dosyasından grafik oluştur
+# Generate graph from JSON file
 python3 load-balancer/plot_latency.py results.json round_robin
 ```
 
-Not: `plot_latency.py` scripti JSON formatında latency verilerini bekler. Vegeta gibi araçlarla toplanan sonuçlar JSON formatında olmalıdır.
+Note: The `plot_latency.py` script expects latency data in JSON format. Results collected with tools like Vegeta should be in JSON format.
+
+### Load Testing Tools
+
+For comprehensive load testing and analysis, you can use Vegeta:
+
+```bash
+# High-rate load test with Vegeta
+echo "GET http://localhost:8000/" | vegeta attack -rate=50000 -duration=30s -timeout=5s | tee results.bin | vegeta report
+```
+
+This command:
+- Sends requests at 50,000 requests/second for 30 seconds
+- Saves results to `results.bin`
+- Displays a real-time report with latency percentiles and throughput metrics
 
 ## Performance Metrics
 
-Proje aşağıdaki performans metriklerini ölçer:
+The project measures the following performance metrics:
 
-- **Average Latency**: Tüm isteklerin ortalama gecikme süresi
-- **p50 (Median)**: 50. yüzdelik dilim latency
-- **p90**: 90. yüzdelik dilim latency
-- **p95**: 95. yüzdelik dilim latency (tail latency)
-- **p99**: 99. yüzdelik dilim latency (extreme tail latency)
-- **CDF (Cumulative Distribution Function)**: Latency dağılımının kümülatif dağılım fonksiyonu
-- **Throughput**: Saniye başına işlenen istek sayısı
+- **Average Latency**: Average delay time of all requests
+- **p50 (Median)**: 50th percentile latency
+- **p90**: 90th percentile latency
+- **p95**: 95th percentile latency (tail latency)
+- **p99**: 99th percentile latency (extreme tail latency)
+- **CDF (Cumulative Distribution Function)**: Cumulative distribution function of latency distribution
+- **Throughput**: Number of requests processed per second
 
-### Test Senaryoları
+### Test Scenarios
 
-Proje üç farklı test senaryosu içerir (`experiments/` klasöründe):
+The project includes three different test scenarios (in the `experiments/` folder):
 
-1. **Scenario 1**: Heterojen server kapasiteleri ile temel performans testi
-2. **Scenario 2**: Trafik patlaması senaryosu
-3. **Scenario 3**: Server hata senaryosu (failover davranışı)
+1. **Scenario 1**: Basic performance test with heterogeneous server capacities
+2. **Scenario 2**: Traffic burst scenario
+3. **Scenario 3**: Server failure scenario (failover behavior)
 
-Her senaryo için Round Robin, Weighted Round Robin ve Least Connections algoritmalarının sonuçları mevcuttur.
+Results for Round Robin, Weighted Round Robin, and Least Connections algorithms are available for each scenario.
 
 ## Project Structure
 
@@ -224,35 +241,35 @@ load-balancing-analysis/
 
 ## Experimental Results
 
-Proje aşağıdaki soruları yanıtlamayı amaçlar:
+The project aims to answer the following questions:
 
-1. Heterojen server kapasiteleri altında hangi algoritma daha iyi yük dağılımı sağlar?
-2. Trafik patlamaları sırasında hangi algoritma daha düşük tail latency gösterir?
-3. Server hataları durumunda hangi algoritma daha iyi failover sağlar?
-4. Hangi algoritmalar network latency değişkenliğinden daha çok etkilenir?
+1. Which algorithm provides better load distribution under heterogeneous server capacities?
+2. Which algorithm shows lower tail latency during traffic bursts?
+3. Which algorithm provides better failover in case of server failures?
+4. Which algorithms are more affected by network latency variability?
 
-Detaylı sonuçlar için `experiments/` klasöründeki senaryo sonuçlarına bakabilirsiniz. Her senaryo için:
-- JSON formatında ham sonuçlar (`results.json`)
-- HTML formatında interaktif grafikler (`latency_plot.html`)
+For detailed results, you can check the scenario results in the `experiments/` folder. Each scenario includes:
+- Raw results in JSON format (`results.json`)
+- Interactive graphs in HTML format (`latency_plot.html`)
 
 ## Technical Details
 
-### Algoritma Özellikleri
+### Algorithm Features
 
-- **Round Robin**: Thread-safe atomic operasyonlar kullanarak yüksek throughput sağlar
-- **Weighted Round Robin**: GCD tabanlı lock-free implementasyon, server ağırlıklarına göre dağıtım yapar
-- **Least Connections**: Aktif bağlantı sayısına göre dinamik server seçimi
+- **Round Robin**: Provides high throughput using thread-safe atomic operations
+- **Weighted Round Robin**: GCD-based lock-free implementation that distributes requests according to server weights
+- **Least Connections**: Dynamic server selection based on active connection count
 
-### Performans Optimizasyonları
+### Performance Optimizations
 
-- **Connection Pooling**: HTTP transport connection reuse ile optimize edilmiş
-- **Async Logging**: Non-blocking, batch processing ile yüksek throughput için optimize edilmiş log sistemi
-- **Pre-created Proxies**: Her backend için önceden oluşturulmuş reverse proxy'ler
-- **Graceful Shutdown**: Güvenli kapanma mekanizması
+- **Connection Pooling**: Optimized with HTTP transport connection reuse
+- **Async Logging**: Non-blocking log system optimized for high throughput with batch processing
+- **Pre-created Proxies**: Pre-created reverse proxies for each backend
+- **Graceful Shutdown**: Safe shutdown mechanism
 
 ## References
 
-Bu proje aşağıdaki akademik çalışmalardan ilham almıştır:
+This project is inspired by the following academic works:
 
 - Mitzenmacher (Randomized Load Balancing)
 - Cardellini et al. (Dynamic Load Balancing Overview)
