@@ -19,7 +19,7 @@ This project provides a theoretical and experimental analysis of classical load 
 
 ## About
 
-Load balancing is a fundamental mechanism for distributing client requests across multiple backend servers to improve system performance, availability, and scalability. While classical load balancing algorithms such as Round Robin, Least Connections, and Consistent Hashing perform well under ideal conditions, their performance often degrades when servers have heterogeneous capacities, traffic is bursty, or network latency fluctuates.
+Load balancing is a fundamental mechanism for distributing client requests across multiple backend servers to improve system performance, availability, and scalability. While classical load balancing algorithms such as Round Robin, Weighted Round Robin, and Least Connections perform well under ideal conditions, their performance often degrades when servers have heterogeneous capacities, traffic is bursty, or network latency fluctuates.
 
 This project aims to fill the gap in existing literature by systematically comparing the behavior of classical algorithms under realistic dynamic conditions.
 
@@ -27,19 +27,21 @@ This project aims to fill the gap in existing literature by systematically compa
 
 Most classical load balancing algorithms rely on static assumptions about backend performance, which can lead to:
 
-- Load imbalance when server capabilities vary (e.g., CPU/IO differences)
+- Load imbalance when server capabilities vary (e.g., CPU/memory differences)
 - High tail latency (p95/p99) under sudden traffic bursts
 - Unstable or unfair assignment when network delay fluctuates
-- Poor failover behavior, especially in hash-based schemes
+- Poor failover behavior when servers become unavailable
 
 ## Features
 
-- **Four Classical Algorithms**: Round Robin, Weighted Round Robin, Least Connections, and Consistent Hashing
-- **Comprehensive Metrics**: Average latency, p50, p95, p99 percentiles
+- **Three Classical Algorithms**: Round Robin, Weighted Round Robin, and Least Connections
+- **Comprehensive Metrics**: Latency tracking with p50, p90, p95, p99 percentiles
 - **Docker Support**: Docker Compose for easy setup and execution
 - **Visualization**: Python-based latency distribution analysis and CDF plots
-- **Heterogeneous Servers**: Realistic test environment with different CPU capacities and delay times
-- **Experimental Analysis**: Traffic burst and server failure scenarios
+- **Heterogeneous Servers**: Realistic test environment with different CPU capacities and memory limits
+- **Experimental Scenarios**: Multiple test scenarios with different traffic patterns
+- **High-Performance Logging**: Async, non-blocking log system optimized for high throughput
+- **Connection Pooling**: Optimized HTTP transport with connection reuse
 
 ## Supported Algorithms
 
@@ -52,8 +54,6 @@ A weighted version of Round Robin based on server capacities. Server weights are
 ### 3. Least Connections (LC)
 Selects the server with the fewest active connections. Provides dynamic load distribution.
 
-### 4. Consistent Hashing
-Hash-based server selection. Ensures minimal redistribution when servers are added or removed.
 
 ## Architecture
 
@@ -65,7 +65,8 @@ Hash-based server selection. Ensures minimal redistribution when servers are add
        ▼
 ┌─────────────────┐
 │  Load Balancer  │ ◄─── Algorithm Selection
-│    (Port 8000)  │      (RR/WRR/LC/CH)
+│    (Port 8000)  │      (RR/WRR/LC)
+│                 │      via ALGORITHM env var
 └──────┬──────────┘
        │
        ├──────────┬──────────┬──────────┐
@@ -73,7 +74,7 @@ Hash-based server selection. Ensures minimal redistribution when servers are add
 ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐
 │Backend 1 │ │Backend 2 │ │Backend 3 │ │Backend 4 │
 │CPU: 0.5  │ │CPU: 1.0  │ │CPU: 0.3  │ │CPU: 2.0  │
-│Delay:10ms│ │Delay:30ms│ │Delay:60ms│ │Delay: 0ms│
+│Mem: 256M │ │Mem: 512M │ │Mem: 128M │ │Mem: 1G   │
 └──────────┘ └──────────┘ └──────────┘ └──────────┘
 ```
 
@@ -95,12 +96,17 @@ cd load-balancing-analysis
 
 2. **Start the system with Docker Compose:**
 ```bash
+# Default algorithm (Round Robin)
 docker-compose up --build
+
+# Veya belirli bir algoritma ile başlatmak için:
+ALGORITHM=weighted_round_robin docker-compose up --build
+ALGORITHM=least_connections docker-compose up --build
 ```
 
-This command starts:
+Bu komut şunları başlatır:
 - Load balancer (port 8000)
-- 4 backend servers (with different capacities and delays)
+- 4 backend server (farklı CPU kapasiteleri ve bellek limitleri ile)
 
 ## Usage
 
@@ -116,91 +122,137 @@ curl http://localhost:8000/
 for i in {1..1000}; do curl http://localhost:8000/ & done; wait
 ```
 
-### Changing Algorithms
+### Algoritma Değiştirme
 
-You can change the algorithm by using `selectRoundRobin()` or `selectLeastConn()` functions in the load balancer code.
-
-### Collecting Metrics
-
-After 40 seconds, the load balancer automatically:
-- Writes latency data to `latency.csv` file
-- Prints p50, p95, p99 percentiles to console
-
-### Visualization
-
-Grafik oluşturmak için basit script kullanın:
+Algoritmayı değiştirmek için `ALGORITHM` environment variable'ını kullanın:
 
 ```bash
-# Round Robin için grafik oluştur
-./plot.sh round_robin
+# Round Robin (varsayılan)
+ALGORITHM=round_robin docker-compose up
 
-# Weighted Round Robin için
-./plot.sh weighted_round_robin
+# Weighted Round Robin
+ALGORITHM=weighted_round_robin docker-compose up
 
-# Least Connections için
-./plot.sh least_connections
+# Least Connections
+ALGORITHM=least_connections docker-compose up
 ```
 
-Grafik `results/latency_plot_<algorithm>.png` olarak kaydedilir.
+Desteklenen algoritma değerleri:
+- `round_robin` (varsayılan)
+- `weighted_round_robin`
+- `least_connections`
 
-**Alternatif:** Manuel olarak Docker komutu çalıştırmak isterseniz:
+### Metrik Toplama
+
+Load balancer her istek için latency bilgilerini log dosyasına yazar:
+- Log dosyası: `logs/load_balancer.log`
+- Her backend server'ın kendi log dosyası: `logs/backend1.log`, `logs/backend2.log`, vb.
+
+Log formatı:
+```
+2026/01/13 21:25:24 server=backend1:8080 latency=465.542ms
+```
+
+Test sonuçları için `experiments/` klasöründeki senaryoları kullanabilirsiniz. Her senaryo için JSON formatında sonuçlar ve HTML grafikler mevcuttur.
+
+### Görselleştirme
+
+Test sonuçlarını görselleştirmek için `experiments/` klasöründeki hazır grafikleri kullanabilirsiniz. Her senaryo için HTML formatında interaktif grafikler mevcuttur.
+
+**Manuel grafik oluşturma:**
+
+Eğer Vegeta gibi bir load testing tool kullanarak JSON formatında sonuçlar topladıysanız:
+
 ```bash
-docker run --rm -v "$(pwd)/results:/app/results" \
-  -v "$(pwd)/load-balancer/plot_latency.py:/app/plot_latency.py" \
-  --entrypoint python3 load-balancing-analysis-lb:latest \
-  /app/plot_latency.py /app/results/latency.csv round_robin
+# JSON dosyasından grafik oluştur
+python3 load-balancer/plot_latency.py results.json round_robin
 ```
+
+Not: `plot_latency.py` scripti JSON formatında latency verilerini bekler. Vegeta gibi araçlarla toplanan sonuçlar JSON formatında olmalıdır.
 
 ## Performance Metrics
 
-The project measures the following performance metrics:
+Proje aşağıdaki performans metriklerini ölçer:
 
-- **Average Latency**: Average delay time of all requests
-- **p50 (Median)**: 50th percentile latency
-- **p95**: 95th percentile latency (tail latency)
-- **p99**: 99th percentile latency (extreme tail latency)
-- **CDF (Cumulative Distribution Function)**: Cumulative distribution function of latency distribution
+- **Average Latency**: Tüm isteklerin ortalama gecikme süresi
+- **p50 (Median)**: 50. yüzdelik dilim latency
+- **p90**: 90. yüzdelik dilim latency
+- **p95**: 95. yüzdelik dilim latency (tail latency)
+- **p99**: 99. yüzdelik dilim latency (extreme tail latency)
+- **CDF (Cumulative Distribution Function)**: Latency dağılımının kümülatif dağılım fonksiyonu
+- **Throughput**: Saniye başına işlenen istek sayısı
 
-### Test Scenarios
+### Test Senaryoları
 
-1. **Heterogeneous Server Capacities**: Different CPU limits and delay times
-2. **Traffic Bursts**: Performance under sudden load increases
-3. **Server Failures**: Failover behavior in case of server crashes
+Proje üç farklı test senaryosu içerir (`experiments/` klasöründe):
+
+1. **Scenario 1**: Heterojen server kapasiteleri ile temel performans testi
+2. **Scenario 2**: Trafik patlaması senaryosu
+3. **Scenario 3**: Server hata senaryosu (failover davranışı)
+
+Her senaryo için Round Robin, Weighted Round Robin ve Least Connections algoritmalarının sonuçları mevcuttur.
 
 ## Project Structure
 
 ```
 load-balancing-analysis/
-├── backend/                 # Backend server implementation
+├── backend/                    # Backend server implementation
 │   ├── Dockerfile
-│   └── main.go
-├── load-balancer/          # Load balancer implementation
+│   └── main.go                 # HTTP backend server with logging
+├── load-balancer/              # Load balancer implementation
 │   ├── Dockerfile
-│   ├── main.go
-│   └── plot_latency.py     # Latency visualization script
-├── utils/                  # Helper functions and models
-│   ├── latency.go         # Latency calculation functions
-│   ├── models.go          # Data models and interfaces
-│   ├── round_robin.go     # Round Robin implementation
-│   └── weighted_round_robin.go  # Weighted Round Robin implementation
-├── docker-compose.yml     # Docker Compose configuration
-├── go.mod                 # Go module definitions
-├── plot.sh                # Simple script to generate plots
-└── README.md              # This file
+│   ├── main.go                 # Load balancer with algorithm selection
+│   └── plot_latency.py        # Latency visualization script (JSON input)
+├── utils/                      # Helper functions and models
+│   ├── latency.go             # Latency calculation functions
+│   ├── models.go              # Data models and interfaces
+│   ├── round_robin.go         # Round Robin implementation
+│   ├── weighted_round_robin.go # Weighted Round Robin implementation
+│   └── least_connections.go   # Least Connections implementation
+├── experiments/                # Test scenarios and results
+│   ├── scenario-1/            # Heterogeneous server capacities
+│   ├── scenario-2/            # Traffic burst scenario
+│   └── scenario-3/            # Server failure scenario
+├── logs/                       # Log files directory
+├── results/                    # Test results directory
+├── docker-compose.yml         # Docker Compose configuration
+├── go.mod                     # Go module definitions
+├── plot.sh                    # Simple script to generate plots
+├── system_design.png          # System architecture diagram
+└── README.md                  # This file
 ```
 
 ## Experimental Results
 
-The project aims to answer the following questions:
+Proje aşağıdaki soruları yanıtlamayı amaçlar:
 
-1. Which algorithm provides better load distribution under heterogeneous server capacities?
-2. Which algorithm shows lower tail latency during traffic bursts?
-3. Which algorithm provides better failover in case of server failures?
-4. Which algorithms are more affected by network latency variability?
+1. Heterojen server kapasiteleri altında hangi algoritma daha iyi yük dağılımı sağlar?
+2. Trafik patlamaları sırasında hangi algoritma daha düşük tail latency gösterir?
+3. Server hataları durumunda hangi algoritma daha iyi failover sağlar?
+4. Hangi algoritmalar network latency değişkenliğinden daha çok etkilenir?
+
+Detaylı sonuçlar için `experiments/` klasöründeki senaryo sonuçlarına bakabilirsiniz. Her senaryo için:
+- JSON formatında ham sonuçlar (`results.json`)
+- HTML formatında interaktif grafikler (`latency_plot.html`)
+
+## Technical Details
+
+### Algoritma Özellikleri
+
+- **Round Robin**: Thread-safe atomic operasyonlar kullanarak yüksek throughput sağlar
+- **Weighted Round Robin**: GCD tabanlı lock-free implementasyon, server ağırlıklarına göre dağıtım yapar
+- **Least Connections**: Aktif bağlantı sayısına göre dinamik server seçimi
+
+### Performans Optimizasyonları
+
+- **Connection Pooling**: HTTP transport connection reuse ile optimize edilmiş
+- **Async Logging**: Non-blocking, batch processing ile yüksek throughput için optimize edilmiş log sistemi
+- **Pre-created Proxies**: Her backend için önceden oluşturulmuş reverse proxy'ler
+- **Graceful Shutdown**: Güvenli kapanma mekanizması
 
 ## References
 
-This project is inspired by the following academic works:
+Bu proje aşağıdaki akademik çalışmalardan ilham almıştır:
 
 - Mitzenmacher (Randomized Load Balancing)
 - Cardellini et al. (Dynamic Load Balancing Overview)
