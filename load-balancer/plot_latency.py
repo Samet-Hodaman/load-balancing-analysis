@@ -1,106 +1,90 @@
-#!/usr/bin/env python3
-import sys
-import pandas as pd
+import json
 import numpy as np
-import matplotlib
-matplotlib.use('Agg')  # Non-interactive backend
 import matplotlib.pyplot as plt
-from scipy.stats import gaussian_kde
+import sys
 
-def parse_latency_csv(path):
-    df = pd.read_csv(path)
+# JSON formatını kontrol et
+# Önce tek bir JSON objesi olarak okumayı dene (özet format)
+latencies_list = []
+is_summary_format = False
+data = None
 
-    def parse(v):
-        v = str(v).strip()
-        if v.endswith("ns"):
-            return float(v.replace("ns","")) / 1e6
-        elif v.endswith("µs") or v.endswith("us"):
-            return float(v.replace("µs","").replace("us","")) / 1000
-        elif v.endswith("ms"):
-            return float(v.replace("ms",""))
-        elif v.endswith("s"):
-            return float(v.replace("s","")) * 1000
-        else:
-            return float(v)
-
-    lat = df["latency_ms"].apply(parse).values
-    # Clean NaN and Inf values
-    lat = lat[np.isfinite(lat)]
-    # Filter negative or zero values (must be positive for log scale)
-    lat = lat[lat > 0]
-    return np.sort(lat)
-
-def smooth_cdf(lat):
-    # Make minimum value safe (for log scale)
-    min_val = lat.min()
-    max_val = lat.max()
-    
-    if min_val <= 0:
-        min_val = max_val * 1e-6
-    else:
-        min_val = max(min_val, max_val * 1e-6)
-    
-    # Calculate in log space
-    log_min = np.log10(min_val)
-    log_max = np.log10(max_val)
-    x = np.logspace(log_min, log_max, 600)
-    
-    # Calculate KDE
-    try:
-        kde = gaussian_kde(lat)
-        pdf = kde(x)
-        pdf = np.nan_to_num(pdf, nan=0.0, posinf=0.0, neginf=0.0)
-        cdf = np.cumsum(pdf)
-        if cdf[-1] > 0:
-            cdf /= cdf[-1]
-        else:
-            cdf = np.searchsorted(lat, x, side='right') / len(lat)
-    except Exception as e:
-        print(f"Warning: KDE failed ({e}), using empirical CDF")
-        cdf = np.searchsorted(lat, x, side='right') / len(lat)
-    
-    return x, cdf
-
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: plot_latency.py <csv_file> [algorithm] [output_file]")
+with open("./results.json") as f:
+    content = f.read().strip()
+    if not content:
+        print("HATA: Dosya boş.")
         sys.exit(1)
     
-    csv_file = sys.argv[1]
-    algorithm = sys.argv[2] if len(sys.argv) > 2 else "unknown"
-    
-    # Generate output filename with algorithm name in snake_case
-    if len(sys.argv) > 3:
-        output_file = sys.argv[3]
-    else:
-        # Default: results/latency_plot_<algorithm>.png
-        output_file = f"results/latency_plot_{algorithm}.png"
-    
+    # Önce tek bir JSON objesi olarak parse etmeyi dene
     try:
-        lat = parse_latency_csv(csv_file)
-        
-        if len(lat) == 0:
-            print("No valid latency data found")
-            sys.exit(1)
-        
-        x, cdf = smooth_cdf(lat)
-        
-        plt.figure(figsize=(10,6))
-        # Format algorithm name for display (replace underscores with spaces, capitalize)
-        algorithm_display = algorithm.replace("_", " ").title()
-        plt.plot(x, cdf, linewidth=2.5, label=f"Latency Distribution ({algorithm_display})")
-        
-        plt.xscale("log")
-        plt.xlabel("Latency (ms, log scale)")
-        plt.ylabel("CDF")
-        plt.title(f"Latency Distribution (CDF) - {algorithm_display}", fontweight="bold")
-        
-        plt.grid(True, which="both", alpha=0.3)
-        plt.legend()
-        plt.tight_layout()
-        plt.savefig(output_file, dpi=300)
-        print(f"Plot saved to {output_file}")
-        plt.close()
-    except Exception as e:
-        print(f"Error generating plot: {e}")
-        sys.exit(1)
+        data = json.loads(content)
+        # Eğer "latencies" anahtarı varsa ve dict ise, özet formatı
+        if isinstance(data.get("latencies"), dict):
+            is_summary_format = True
+    except json.JSONDecodeError:
+        # Tek bir JSON objesi değilse, json-stream formatı olabilir
+        # Dosyayı satır satır oku
+        f.seek(0)
+        for line in f:
+            if line.strip():
+                try:
+                    req_data = json.loads(line)
+                    if "latency" in req_data:
+                        latencies_list.append(req_data["latency"])
+                except json.JSONDecodeError:
+                    continue
+
+if is_summary_format:
+    print("UYARI: Bu JSON dosyası özet istatistikler içeriyor, ham latency verileri yok.")
+    print("Ham veriler için Vegeta'yı şu şekilde çalıştırın:")
+    print("  vegeta attack -format=json-stream -output=results.json < targets.txt")
+    print("\nMevcut özet istatistikleri kullanarak yaklaşık bir grafik oluşturuluyor...")
+    
+    # Özet istatistiklerden yaklaşık bir dağılım oluştur
+    lat_stats = data["latencies"]
+    requests = data.get("requests", 1000)
+    
+    # Min, mean, max ve percentile değerlerini kullanarak yaklaşık dağılım oluştur
+    min_lat = lat_stats["min"] / 1e6  # ns'den ms'ye
+    mean_lat = lat_stats["mean"] / 1e6
+    max_lat = lat_stats["max"] / 1e6
+    p50 = lat_stats["50th"] / 1e6
+    p90 = lat_stats["90th"] / 1e6
+    p95 = lat_stats["95th"] / 1e6
+    p99 = lat_stats["99th"] / 1e6
+    
+    # Normal dağılım kullanarak yaklaşık latency değerleri oluştur
+    # (Bu tam olarak doğru değil ama görselleştirme için yeterli)
+    std = (p95 - mean_lat) / 1.645  # p95 için yaklaşık std hesapla
+    latencies = np.random.normal(mean_lat, std, min(requests, 10000))
+    latencies = np.clip(latencies, min_lat, max_lat)  # Min-max aralığında tut
+    
+    # Bilinen percentile değerlerini ekle
+    known_percentiles = [min_lat, p50, p90, p95, p99, max_lat]
+    latencies = np.concatenate([latencies, known_percentiles])
+    
+elif latencies_list:
+    # json-stream formatından latency verileri alındı
+    latencies = np.array(latencies_list) / 1e6  # ns'den ms'ye çevir
+else:
+    print("HATA: JSON dosyasından latency verileri okunamadı.")
+    sys.exit(1)
+
+# Sırala ve CDF hesapla
+latencies_sorted = np.sort(latencies)
+cdf = np.arange(1, len(latencies_sorted) + 1) / len(latencies_sorted)
+
+# Percentile'lar
+p95 = np.percentile(latencies_sorted, 95)
+p99 = np.percentile(latencies_sorted, 99)
+
+# Plot
+plt.figure()
+plt.plot(latencies_sorted, cdf)
+plt.axvline(p95, linestyle='--', label=f"p95 = {p95:.2f} ms")
+plt.axvline(p99, linestyle='--', label=f"p99 = {p99:.2f} ms")
+plt.xlabel("Latency (ms)")
+plt.ylabel("CDF")
+plt.legend()
+plt.grid(True)
+plt.show()

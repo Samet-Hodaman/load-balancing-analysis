@@ -9,6 +9,11 @@ services:
       ALGORITHM: ${ALGORITHM:-round_robin}  # Options: round_robin, weighted_round_robin, least_connections
     volumes:
       - ./logs:/app/logs  # Mount logs directory to access logs from host
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1G
     depends_on:
       - backend1
       - backend2
@@ -27,6 +32,7 @@ services:
       resources:
         limits:
           cpus: "0.5"
+          memory: 256M
 
   backend2:
     build:
@@ -40,6 +46,7 @@ services:
       resources:
         limits:
           cpus: "1.0"
+          memory: 512M
 
   backend3:
     build:
@@ -53,6 +60,7 @@ services:
       resources:
         limits:
           cpus: "0.3"
+          memory: 128M
 
   backend4:
     build:
@@ -66,3 +74,4 @@ services:
       resources:
         limits:
           cpus: "2.0"
+          memory: 1G
