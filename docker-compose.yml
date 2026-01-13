@@ -8,7 +8,7 @@ services:
     environment:
       ALGORITHM: ${ALGORITHM:-round_robin}  # Options: round_robin, weighted_round_robin, least_connections
     volumes:
-      - ./results:/app/results  # Mount results directory to save CSV files
+      - ./logs:/app/logs  # Mount logs directory to access logs from host
     depends_on:
       - backend1
       - backend2
@@ -21,7 +21,8 @@ services:
       dockerfile: ./backend/Dockerfile
     environment:
       SERVER_ID: backend1
-      DELAY_MS: 10
+    volumes:
+      - ./logs:/app/logs  # Mount logs directory to access logs from host
     deploy:
       resources:
         limits:
@@ -33,7 +34,8 @@ services:
       dockerfile: ./backend/Dockerfile
     environment:
       SERVER_ID: backend2
-      DELAY_MS: 30
+    volumes:
+      - ./logs:/app/logs  # Mount logs directory to access logs from host
     deploy:
       resources:
         limits:
@@ -45,7 +47,8 @@ services:
       dockerfile: ./backend/Dockerfile
     environment:
       SERVER_ID: backend3
-      DELAY_MS: 60
+    volumes:
+      - ./logs:/app/logs  # Mount logs directory to access logs from host
     deploy:
       resources:
         limits:
@@ -57,7 +60,8 @@ services:
       dockerfile: ./backend/Dockerfile
     environment:
       SERVER_ID: backend4
-      DELAY_MS: 0
+    volumes:
+      - ./logs:/app/logs  # Mount logs directory to access logs from host
     deploy:
       resources:
         limits:

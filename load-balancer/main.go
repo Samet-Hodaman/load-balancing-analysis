@@ -1,8 +1,8 @@
 package main
 
 import (
+	"bufio"
 	"context"
-	"encoding/csv"
 	"load-balancing-analysis/utils"
 	"log"
 	"net/http"
@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/signal"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -27,12 +26,12 @@ var (
 	lb       utils.LoadBalancer
 	backends []*utils.Server
 
-	csvFile   *os.File
-	csvWriter *csv.Writer
-	csvMu     sync.Mutex
+	logFile   *os.File
+	logWriter *bufio.Writer
+	logger    *log.Logger
 )
 
-func GetLoadBalancer(alg string) utils.LoadBalancer {
+func GetLoadBalancerAlgorithm(alg string) utils.LoadBalancer {
 	switch alg {
 	case RoundRobin:
 		return utils.NewRoundRobin()
@@ -43,6 +42,38 @@ func GetLoadBalancer(alg string) utils.LoadBalancer {
 	default:
 		return utils.NewRoundRobin()
 	}
+}
+
+func initLogger() error {
+	logDir := "/app/logs"
+	// Create logs directory if it doesn't exist
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		return err
+	}
+
+	logFileName := logDir + "/load_balancer.log"
+	var err error
+	logFile, err = os.OpenFile(logFileName, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		return err
+	}
+
+	// Using buffered writer to improve performance
+	logWriter = bufio.NewWriterSize(logFile, 4096)
+	logger = log.New(logWriter, "", log.LstdFlags)
+
+	// Starting a goroutine to periodically flush the buffer
+	go func() {
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			if logWriter != nil {
+				logWriter.Flush()
+			}
+		}
+	}()
+
+	return nil
 }
 
 func init() {
@@ -67,46 +98,14 @@ func init() {
 
 	// Algorithm selection from environment variable
 	alg := strings.ToLower(os.Getenv("ALGORITHM"))
-	lb = GetLoadBalancer(alg)
+	lb = GetLoadBalancerAlgorithm(alg)
 
 	log.Printf("Load balancing algorithm: %s", lb.Name())
 
-	// Get current working directory for debugging
-	wd, err := os.Getwd()
-	if err != nil {
-		log.Printf("Warning: Could not get working directory: %v", err)
-	} else {
-		log.Printf("Current working directory: %s", wd)
-	}
-
-	// Initialize CSV file for real-time logging
-	resultsDir := "results"
-	if err := os.MkdirAll(resultsDir, 0755); err != nil {
-		log.Printf("Error creating results directory '%s': %v", resultsDir, err)
-		log.Printf("CSV logging will be disabled")
-	} else {
-		log.Printf("Results directory '%s' created/verified successfully", resultsDir)
-
-		csvPath := "results/latency.csv"
-		var err error
-		csvFile, err = os.Create(csvPath)
-		if err != nil {
-			log.Printf("Error: Could not create CSV file '%s': %v", csvPath, err)
-			log.Printf("CSV logging will be disabled")
-		} else {
-			log.Printf("CSV file created successfully: %s", csvPath)
-			csvWriter = csv.NewWriter(csvFile)
-			if err := csvWriter.Write([]string{"latency_ms"}); err != nil {
-				log.Printf("Error writing CSV header: %v", err)
-			} else {
-				csvWriter.Flush()
-				if err := csvWriter.Error(); err != nil {
-					log.Printf("Error flushing CSV header: %v", err)
-				} else {
-					log.Printf("CSV file initialized successfully at %s", csvPath)
-				}
-			}
-		}
+	// Initialize file logger
+	if err := initLogger(); err != nil {
+		log.Printf("Warning: Failed to initialize file logger: %v", err)
+		log.Printf("Logging will continue to stdout only")
 	}
 }
 
@@ -122,63 +121,10 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 	elapsed := time.Since(start)
 
-	// Write to CSV in real-time
-	csvMu.Lock()
-	if csvWriter != nil && csvFile != nil {
-		if err := csvWriter.Write([]string{formatMs(elapsed)}); err != nil {
-			log.Printf("Error writing to CSV: %v", err)
-		} else {
-			csvWriter.Flush()
-			if err := csvWriter.Error(); err != nil {
-				log.Printf("Error flushing CSV: %v", err)
-			}
-		}
+	// Write to log file (buffered, low overhead)
+	if logger != nil {
+		logger.Printf("server=%s latency=%v", srv.URL.Host, elapsed)
 	}
-	// Removed warning log to reduce noise - CSV may not be initialized intentionally
-	csvMu.Unlock()
-}
-
-func writeCSV() {
-	csvMu.Lock()
-	defer csvMu.Unlock()
-
-	if csvWriter != nil {
-		csvWriter.Flush()
-		if err := csvWriter.Error(); err != nil {
-			log.Printf("Error flushing CSV during shutdown: %v", err)
-		} else {
-			log.Println("CSV file flushed successfully")
-		}
-	} else {
-		log.Println("Warning: csvWriter is nil, nothing to flush")
-	}
-}
-
-func closeCSV() {
-	csvMu.Lock()
-	defer csvMu.Unlock()
-
-	if csvWriter != nil {
-		csvWriter.Flush()
-		if err := csvWriter.Error(); err != nil {
-			log.Printf("Error flushing CSV before close: %v", err)
-		}
-		csvWriter = nil
-	}
-	if csvFile != nil {
-		if err := csvFile.Close(); err != nil {
-			log.Printf("Error closing CSV file: %v", err)
-		} else {
-			log.Println("CSV file closed successfully")
-		}
-		csvFile = nil
-	}
-}
-
-func formatMs(d time.Duration) string {
-	// Write Duration directly as string to maintain nanosecond precision
-	// Go automatically selects the most appropriate unit (ns, µs, ms, s)
-	return d.String()
 }
 
 func main() {
@@ -205,9 +151,13 @@ func main() {
 	<-sigChan
 	log.Println("Shutting down gracefully...")
 
-	// Flush and close CSV file
-	writeCSV()
-	closeCSV()
+	// Flush and close log file
+	if logWriter != nil {
+		logWriter.Flush()
+	}
+	if logFile != nil {
+		logFile.Close()
+	}
 
 	// Shutdown HTTP server
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
