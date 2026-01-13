@@ -1,0 +1,22 @@
+// SelectServer selects the server with the fewest active connections
+// Optimized for high throughput (50k+ req/s):
+// - O(n) complexity
+// - Lock-free atomic operations
+// - No unnecessary checks or branches
+func (lc *LeastConnections) SelectServer(servers []*Server) *Server {
+	// Initialize with first server (guaranteed to exist if function is called correctly)
+	best := servers[0]
+	min := atomic.LoadInt64(&best.Conns)
+
+	// Process remaining servers
+	for i := 1; i < len(servers); i++ {
+		s := servers[i]
+		c := atomic.LoadInt64(&s.Conns)
+		if c < min {
+			min = c
+			best = s
+		}
+	}
+
+	return best
+}

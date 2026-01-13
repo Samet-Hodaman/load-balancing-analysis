@@ -128,17 +128,28 @@ After 40 seconds, the load balancer automatically:
 
 ### Visualization
 
-To visualize latency data:
+Grafik oluşturmak için basit script kullanın:
 
 ```bash
-# Install required Python packages
-pip install pandas numpy matplotlib scipy
+# Round Robin için grafik oluştur
+./plot.sh round_robin
 
-# Generate plot
-python plot_latency.py
+# Weighted Round Robin için
+./plot.sh weighted_round_robin
+
+# Least Connections için
+./plot.sh least_connections
 ```
 
-This command creates the `latency_cdf_lc_vs_rr.png` file.
+Grafik `results/latency_plot_<algorithm>.png` olarak kaydedilir.
+
+**Alternatif:** Manuel olarak Docker komutu çalıştırmak isterseniz:
+```bash
+docker run --rm -v "$(pwd)/results:/app/results" \
+  -v "$(pwd)/load-balancer/plot_latency.py:/app/plot_latency.py" \
+  --entrypoint python3 load-balancing-analysis-lb:latest \
+  /app/plot_latency.py /app/results/latency.csv round_robin
+```
 
 ## Performance Metrics
 
@@ -165,7 +176,8 @@ load-balancing-analysis/
 │   └── main.go
 ├── load-balancer/          # Load balancer implementation
 │   ├── Dockerfile
-│   └── main.go
+│   ├── main.go
+│   └── plot_latency.py     # Latency visualization script
 ├── utils/                  # Helper functions and models
 │   ├── latency.go         # Latency calculation functions
 │   ├── models.go          # Data models and interfaces
@@ -173,7 +185,7 @@ load-balancing-analysis/
 │   └── weighted_round_robin.go  # Weighted Round Robin implementation
 ├── docker-compose.yml     # Docker Compose configuration
 ├── go.mod                 # Go module definitions
-├── plot_latency.py        # Latency visualization script
+├── plot.sh                # Simple script to generate plots
 └── README.md              # This file
 ```
 
@@ -207,10 +219,6 @@ Contributions are welcome! Please:
 3. Commit your changes (`git commit -m 'Add amazing feature'`)
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
-
-## License
-
-This project is licensed under the MIT License.
 
 ## Author
 

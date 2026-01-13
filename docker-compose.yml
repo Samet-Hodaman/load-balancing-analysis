@@ -1,8 +1,14 @@
 services:
   lb:
-    build: ./lb
+    build:
+      context: .
+      dockerfile: ./load-balancer/Dockerfile
     ports:
       - "8000:8000"
+    environment:
+      ALGORITHM: ${ALGORITHM:-round_robin}  # Options: round_robin, weighted_round_robin, least_connections
+    volumes:
+      - ./results:/app/results  # Mount results directory to save CSV files
     depends_on:
       - backend1
       - backend2
@@ -10,7 +16,9 @@ services:
       - backend4
 
   backend1:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: ./backend/Dockerfile
     environment:
       SERVER_ID: backend1
       DELAY_MS: 10
@@ -20,7 +28,9 @@ services:
           cpus: "0.5"
 
   backend2:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: ./backend/Dockerfile
     environment:
       SERVER_ID: backend2
       DELAY_MS: 30
@@ -30,7 +40,9 @@ services:
           cpus: "1.0"
 
   backend3:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: ./backend/Dockerfile
     environment:
       SERVER_ID: backend3
       DELAY_MS: 60
@@ -40,7 +52,9 @@ services:
           cpus: "0.3"
 
   backend4:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: ./backend/Dockerfile
     environment:
       SERVER_ID: backend4
       DELAY_MS: 0

@@ -1,30 +1,49 @@
 package main
 
 import (
+	"context"
 	"encoding/csv"
+	"load-balancing-analysis/utils"
 	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
-	"sort"
+	"os/signal"
+	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
-type Backend struct {
-	URL   *url.URL
-	Conns int64
-}
+const (
+	RoundRobin         string = "round_robin"
+	WeightedRoundRobin string = "weighted_round_robin"
+	LeastConnections   string = "least_connections"
+)
 
 var (
-	backends []*Backend
-	mu       sync.Mutex
+	lb       utils.LoadBalancer
+	backends []*utils.Server
 
-	latenciesMu sync.Mutex
-	latencies   []time.Duration
+	csvFile   *os.File
+	csvWriter *csv.Writer
+	csvMu     sync.Mutex
 )
+
+func GetLoadBalancer(alg string) utils.LoadBalancer {
+	switch alg {
+	case RoundRobin:
+		return utils.NewRoundRobin()
+	case WeightedRoundRobin:
+		return utils.NewWeightedRoundRobin()
+	case LeastConnections:
+		return utils.NewLeastConnections()
+	default:
+		return utils.NewRoundRobin()
+	}
+}
 
 func init() {
 	urls := []string{
@@ -34,111 +53,168 @@ func init() {
 		"http://backend4:8080",
 	}
 
-	for _, u := range urls {
+	// Default weights for Weighted Round Robin
+	weights := []int64{5, 10, 3, 2}
+
+	for i, u := range urls {
 		parsed, _ := url.Parse(u)
-		backends = append(backends, &Backend{URL: parsed})
+		backends = append(backends, &utils.Server{
+			URL:        parsed,
+			Weight:     weights[i],
+			CurrentWRR: weights[i],
+		})
 	}
-}
 
-var rrIdx uint64
+	// Algorithm selection from environment variable
+	alg := strings.ToLower(os.Getenv("ALGORITHM"))
+	lb = GetLoadBalancer(alg)
 
-func selectRoundRobin() *Backend {
-	i := atomic.AddUint64(&rrIdx, 1)
-	return backends[i%uint64(len(backends))]
-}
+	log.Printf("Load balancing algorithm: %s", lb.Name())
 
-func selectLeastConn() *Backend {
-	mu.Lock()
-	defer mu.Unlock()
+	// Get current working directory for debugging
+	wd, err := os.Getwd()
+	if err != nil {
+		log.Printf("Warning: Could not get working directory: %v", err)
+	} else {
+		log.Printf("Current working directory: %s", wd)
+	}
 
-	var chosen *Backend
-	min := int64(^uint64(0) >> 1)
+	// Initialize CSV file for real-time logging
+	resultsDir := "results"
+	if err := os.MkdirAll(resultsDir, 0755); err != nil {
+		log.Printf("Error creating results directory '%s': %v", resultsDir, err)
+		log.Printf("CSV logging will be disabled")
+	} else {
+		log.Printf("Results directory '%s' created/verified successfully", resultsDir)
 
-	for _, b := range backends {
-		c := atomic.LoadInt64(&b.Conns)
-		if c < min {
-			min = c
-			chosen = b
+		csvPath := "results/latency.csv"
+		var err error
+		csvFile, err = os.Create(csvPath)
+		if err != nil {
+			log.Printf("Error: Could not create CSV file '%s': %v", csvPath, err)
+			log.Printf("CSV logging will be disabled")
+		} else {
+			log.Printf("CSV file created successfully: %s", csvPath)
+			csvWriter = csv.NewWriter(csvFile)
+			if err := csvWriter.Write([]string{"latency_ms"}); err != nil {
+				log.Printf("Error writing CSV header: %v", err)
+			} else {
+				csvWriter.Flush()
+				if err := csvWriter.Error(); err != nil {
+					log.Printf("Error flushing CSV header: %v", err)
+				} else {
+					log.Printf("CSV file initialized successfully at %s", csvPath)
+				}
+			}
 		}
 	}
-	return chosen
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 
-	b := selectRoundRobin()
-	atomic.AddInt64(&b.Conns, 1)
-	defer atomic.AddInt64(&b.Conns, -1)
+	srv := lb.SelectServer(backends)
+	atomic.AddInt64(&srv.Conns, 1)
+	defer atomic.AddInt64(&srv.Conns, -1)
 
-	proxy := httputil.NewSingleHostReverseProxy(b.URL)
+	proxy := httputil.NewSingleHostReverseProxy(srv.URL)
 	proxy.ServeHTTP(w, r)
 
 	elapsed := time.Since(start)
 
-	latenciesMu.Lock()
-	latencies = append(latencies, elapsed)
-	latenciesMu.Unlock()
+	// Write to CSV in real-time
+	csvMu.Lock()
+	if csvWriter != nil && csvFile != nil {
+		if err := csvWriter.Write([]string{formatMs(elapsed)}); err != nil {
+			log.Printf("Error writing to CSV: %v", err)
+		} else {
+			csvWriter.Flush()
+			if err := csvWriter.Error(); err != nil {
+				log.Printf("Error flushing CSV: %v", err)
+			}
+		}
+	}
+	// Removed warning log to reduce noise - CSV may not be initialized intentionally
+	csvMu.Unlock()
 }
 
 func writeCSV() {
-	file, err := os.Create("latency.csv")
-	if err != nil {
-		log.Println("CSV create error:", err)
-		return
+	csvMu.Lock()
+	defer csvMu.Unlock()
+
+	if csvWriter != nil {
+		csvWriter.Flush()
+		if err := csvWriter.Error(); err != nil {
+			log.Printf("Error flushing CSV during shutdown: %v", err)
+		} else {
+			log.Println("CSV file flushed successfully")
+		}
+	} else {
+		log.Println("Warning: csvWriter is nil, nothing to flush")
 	}
-	defer file.Close()
+}
 
-	w := csv.NewWriter(file)
-	defer w.Flush()
+func closeCSV() {
+	csvMu.Lock()
+	defer csvMu.Unlock()
 
-	w.Write([]string{"latency_ms"})
-
-	for _, l := range latencies {
-		w.Write([]string{
-			formatMs(l),
-		})
+	if csvWriter != nil {
+		csvWriter.Flush()
+		if err := csvWriter.Error(); err != nil {
+			log.Printf("Error flushing CSV before close: %v", err)
+		}
+		csvWriter = nil
 	}
-
-	log.Println("Latency CSV written")
+	if csvFile != nil {
+		if err := csvFile.Close(); err != nil {
+			log.Printf("Error closing CSV file: %v", err)
+		} else {
+			log.Println("CSV file closed successfully")
+		}
+		csvFile = nil
+	}
 }
 
 func formatMs(d time.Duration) string {
-	// Duration'ı direkt string olarak yaz, böylece nanosaniye hassasiyetinde kalır
-	// Go otomatik olarak en uygun birimi seçer (ns, µs, ms, s)
+	// Write Duration directly as string to maintain nanosecond precision
+	// Go automatically selects the most appropriate unit (ns, µs, ms, s)
 	return d.String()
-}
-
-func percentiles() {
-	latenciesMu.Lock()
-	defer latenciesMu.Unlock()
-
-	sort.Slice(latencies, func(i, j int) bool {
-		return latencies[i] < latencies[j]
-	})
-
-	n := len(latencies)
-	if n == 0 {
-		return
-	}
-
-	p50 := latencies[n*50/100]
-	p95 := latencies[n*95/100]
-	p99 := latencies[n*99/100]
-
-	log.Printf("p50=%v p95=%v p99=%v total=%d\n",
-		p50, p95, p99, n)
 }
 
 func main() {
 	http.HandleFunc("/", handler)
 
+	// Setup graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+	server := &http.Server{
+		Addr:    ":8000",
+		Handler: nil,
+	}
+
+	// Start HTTP server in a goroutine
 	go func() {
-		<-time.After(40 * time.Second)
-		percentiles()
-		writeCSV()
+		log.Printf("Load balancer (%s + metrics) running on :8000", lb.Name())
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatal(err)
+		}
 	}()
 
-	log.Println("Load balancer (LC + metrics) running on :8000")
-	log.Fatal(http.ListenAndServe(":8000", nil))
+	// Wait for interrupt signal
+	<-sigChan
+	log.Println("Shutting down gracefully...")
+
+	// Flush and close CSV file
+	writeCSV()
+	closeCSV()
+
+	// Shutdown HTTP server
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := server.Shutdown(ctx); err != nil {
+		log.Printf("Server shutdown error: %v", err)
+	}
+
+	log.Println("Server stopped")
 }
